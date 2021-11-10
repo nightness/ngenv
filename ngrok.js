@@ -43,32 +43,37 @@ fs.readFile(dotenvFile, "utf8", (err, data) => {
     const addr = options?.addr ? options.addr : 3000;
 
     // Start ngrok
-    const url = await ngrok.connect({ authtoken, proto, addr });
+    try {
+      const url = await ngrok.connect({ authtoken, proto, addr });
 
-    // Rebuild lines with the new url
-    lines = lines.map((element) => {
-      const [name] = element.split("=");
-      if (name === "NGROK_SERVERHOST") return `${name}=${url}`;
-      return element;
-    });
+      // Rebuild lines with the new url
+      lines = lines.map((element) => {
+        const [name] = element.split("=");
+        if (name === "NGROK_SERVERHOST") return `${name}=${url}`;
+        return element;
+      });
 
-    // convert back to string format
-    let writeData = "";
-    lines.forEach((element) => {
-      writeData += element + "\n";
-    });
-    writeData = writeData.slice(0, writeData.length - 1);
+      // convert back to string format
+      let writeData = "";
+      lines.forEach((element) => {
+        writeData += element + "\n";
+      });
+      writeData = writeData.slice(0, writeData.length - 1);
 
-    // Write the new .env file
-    fs.writeFile(dotenvFile, writeData, (err) => {
-      if (err) {
-        console.error(err);
-        return;
-      }
-      console.clear();
-      console.log(`Started ngrok: protocol '${proto}', addr '${addr}'`)
-      console.log(`Your current ngrok url is ${url}.`);
-      console.log(`Your .env file has been updated.`);
-    });
+      // Write the new .env file
+      fs.writeFile(dotenvFile, writeData, (err) => {
+        if (err) {
+          console.error(err);
+          return;
+        }
+        console.clear();
+        console.log(`Started ngrok: protocol '${proto}', addr '${addr}'`);
+        console.log(`Your current ngrok url is ${url}.`);
+        console.log(`Your .env file has been updated.`);
+      });
+    } catch (err) {
+        console.error(err.message);
+        process.exit(1);
+    }
   })();
 });
