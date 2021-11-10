@@ -4,12 +4,13 @@
   "description": "ngrok start-up wrapper that uses a dotenv file to get the authtoken and save the https address",
   "main": "ngrok.js",
   "license": "MIT",
-	"scripts": {
-		"test": "echo \"Error: no test specified\" && exit 1",
-		"debug": "node --inspect ngrok.js",
-		"start": "node ngrok"
-	},  
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "debug": "node --inspect ngrok.js",
+    "start": "node ngrok"
+  },
   "dependencies": {
+    "command-line-args": "^5.2.0",
     "ngrok": "^4.2.2"
   }
 }
