@@ -47,11 +47,20 @@ fs.readFile(dotenvFile, "utf8", (err, data) => {
       const url = await ngrok.connect({ authtoken, proto, addr });
 
       // Rebuild lines with the new url
+      let found = false;
       lines = lines.map((element) => {
         const [name] = element.split("=");
-        if (name === "NGROK_SERVERHOST") return `${name}=${url}`;
+        if (name === "NGROK_SERVERHOST") {
+            found = true;
+            return `${name}=${url}`;
+        }
         return element;
       });
+
+      // Is this variable already in the .env, if not add it.
+      if (!found) {
+          lines.unshift(`NGROK_SERVERHOST=${url}`)
+      }
 
       // convert back to string format
       let writeData = "";
