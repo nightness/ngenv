@@ -5,8 +5,8 @@ const { exec } = require("child_process");
 const dotenvFile = "../.env";
 
 const optionDefinitions = [
-  { name: "proto", alias: 'p', type: String },
-  { name: "addr", alias: 'a', type: Number },
+  { name: "proto", alias: 'P', type: String },
+  { name: "port", alias: 'p', type: Number },
 ];
 
 const commandLineArgs = require("command-line-args");
