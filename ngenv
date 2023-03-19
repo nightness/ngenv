@@ -1,0 +1,164 @@
+#!/usr/bin/env node
+const ngrok = require("ngrok");
+const fs = require("fs");
+const os = require("os");
+const { parse } = require("yaml");
+
+// Parse the command line options
+const commandLineArgs = require("command-line-args");
+const optionDefinitions = [
+  { name: "proto", alias: "P", type: String },
+  { name: "port", alias: "p", type: Number },
+  { name: "env", alias: "e", type: String },
+];
+const options = commandLineArgs(optionDefinitions);
+const dotenvFile = options?.env ?? "./.env";
+
+// vars
+let authToken = null; // string || null
+
+// Main (an async) function
+(async function () {
+  // Get the ngrok config file path
+  let ngrokConfig = getNgrokConfig();
+
+  // Check if the ngrok config file exists
+  if (!fs.existsSync(ngrokConfig)) {
+    throw new Error("No ngrok config file found");
+  }
+
+  // Read the ngrok config file
+  try {
+    const { authToken } = readNgrokConfig(ngrokConfig);
+    global.authToken = authToken;
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
+
+  // Start ngrok
+  const proto = options?.proto ?? "http";
+  const addr = options?.port ? options.port : 3000;
+  try {
+    const url = await ngrok.connect({
+      authtoken: authToken,
+      proto,
+      addr,
+      onLogEvent: (data) => {
+        // combine the key-value pairs into a single object
+        const dataObj = parseLogLine(data);
+        // console.log(`[${dataObj.lvl}] ${dataObj.msg}`);
+        // console.log(dataObj);
+      },
+    });
+    writeDotEnv(url); // Sync the .env file
+    console.log(`Started ngrok: protocol '${proto}', addr '${addr}'`);
+    console.log(`Your current ngrok url is ${url}.`);
+    console.log(`Your .env file has been updated.`);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+})(); // end main async function
+
+function getNgrokConfig() {
+  // Newer versions of ngrok
+  let ngrokConfig = os.homedir() + "/.ngrok2/ngrok.yml";
+  if (fs.existsSync(ngrokConfig)) {
+    return ngrokConfig;
+  }
+
+  // Alternative location for linux
+  ngrokConfig = os.homedir() + "/.config/ngrok/ngrok.yml";
+  if (fs.existsSync(ngrokConfig)) {
+    return ngrokConfig;
+  }
+
+  // MacOS
+  ngrokConfig = os.homedir() + "/Library/Application Support/ngrok/ngrok.yml";
+  if (fs.existsSync(ngrokConfig)) {
+    return ngrokConfig;
+  }
+
+  // Windows
+  ngrokConfig = os.homedir() + "/AppData/Local/ngrok/ngrok.yml";
+  if (fs.existsSync(ngrokConfig)) {
+    return ngrokConfig;
+  }
+
+  throw new Error("ngrok config file not found");
+}
+
+function readNgrokConfig(ngrokConfig) {
+  const data = fs.readFileSync(ngrokConfig, "utf8");
+
+  let authToken;
+
+  // Convert string to string array, split at newlines
+  let lines = data.split("\n"); // string[]
+
+  // find the auth token (format: authtoken: token_goes_here)
+  lines.forEach((element) => {
+    const [name, value] = element.split(": ");
+    if (name === "authtoken") authToken = value;
+  });
+
+  // No token found
+  if (!authToken) {
+    // https://dashboard.ngrok.com/get-started/your-authtoken
+    throw new Error("Setup NGROK_AUTHTOKEN in your .env file");
+  }
+
+  return { authToken };
+}
+
+function readDotEnv() {
+  const data = fs.readFileSync(dotenvFile, "utf8");
+
+  // Convert string to string array, split at newlines
+  let lines = data.split("\n"); // string[]
+
+  return lines;
+}
+
+function writeDotEnv(url) {
+  // Read the .env file
+  let lines = readDotEnv(dotenvFile);
+
+  // Rebuild lines with the new url
+  let found = false;
+  lines = lines.map((element) => {
+    const [name] = element.split("=");
+    if (name === "NGROK_SERVERHOST") {
+      found = true;
+      return `${name}=${url}`;
+    }
+    return element;
+  });
+
+  // Is this variable already in the .env, if not add it.
+  if (!found) {
+    lines.unshift(`NGROK_SERVERHOST=${url}`);
+  }
+
+  // convert back to string format
+  let writeData = "";
+  lines.forEach((element) => {
+    writeData += element + "\n";
+  });
+  writeData = writeData.slice(0, writeData.length - 1);
+
+  // Write the new .env file
+  fs.writeFileSync(dotenvFile, writeData);
+}
+
+function parseLogLine(line) {
+  const regex = /(\S+)=("[^"]+"|\S+)/g;
+  const logEntry = {};
+  let match;
+  while ((match = regex.exec(line)) !== null) {
+    logEntry[match[1]] = match[2].replace(/"/g, "");
+  }
+  logEntry.t = new Date(logEntry.t);
+  return logEntry;
+}
