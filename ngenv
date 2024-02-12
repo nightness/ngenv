@@ -6,9 +6,19 @@ const { spawn, exec } = require("child_process");
 const commandLineArgs = require("command-line-args");
 const ngrok = require("ngrok");
 
+const ngrokConfigFile = getNgrokConfig();
+if (!ngrokConfigFile) {
+  console.error(
+    "No ngrok config file found! Run 'ngrok authtoken <token>' in your terminal."
+  );
+  process.exit(1);
+}
+
 const projectFolder = findProjectFolder();
 if (!projectFolder) {
-  console.error("No project folder found");
+  console.error(
+    "No project folder found! Make sure there is a .env file in the project folder."
+  );
   process.exit(1);
 }
 if (!fs.existsSync(`${projectFolder}/.ngenv`)) {
@@ -224,32 +234,23 @@ async function backgroundMain(options) {
   }
 }
 
-function getNgrokConfig() {
-  // Newer versions of ngrok
-  let ngrokConfig = os.homedir() + "/.ngrok2/ngrok.yml";
-  if (fs.existsSync(ngrokConfig)) {
-    return ngrokConfig;
+function getNgrokConfig(pathOnly = false) {
+  const paths = [
+    os.homedir() + "/.ngrok2", // Newer versions of ngrok
+    os.homedir() + "/Library/Application Support/ngrok", // MacOS
+    os.homedir() + "/AppData/Local/ngrok", // Windows
+    os.homedir() + "/.config/ngrok", // Alternative location for linux
+  ];
+  for (const p of paths) {
+    if (fs.existsSync(`${p}/ngrok.yml`)) {
+      return pathOnly ? p : `${p}/ngrok.yml`;
+    }
   }
 
-  // Alternative location for linux
-  ngrokConfig = os.homedir() + "/.config/ngrok/ngrok.yml";
-  if (fs.existsSync(ngrokConfig)) {
-    return ngrokConfig;
-  }
-
-  // MacOS
-  ngrokConfig = os.homedir() + "/Library/Application Support/ngrok/ngrok.yml";
-  if (fs.existsSync(ngrokConfig)) {
-    return ngrokConfig;
-  }
-
-  // Windows
-  ngrokConfig = os.homedir() + "/AppData/Local/ngrok/ngrok.yml";
-  if (fs.existsSync(ngrokConfig)) {
-    return ngrokConfig;
-  }
-
-  throw new Error("ngrok config file not found");
+  if (pathOnly) return null;
+  throw new Error(
+    "Ngrok config file not found. Try running 'ngrok authtoken <token>' in your terminal."
+  );
 }
 
 function readNgrokConfig(ngrokConfig) {
@@ -269,7 +270,7 @@ function readNgrokConfig(ngrokConfig) {
   // No token found
   if (!authToken) {
     // https://dashboard.ngrok.com/get-started/your-authtoken
-    throw new Error("Setup NGROK_AUTHTOKEN in your .env file");
+    throw new Error("No ngrok authtoken found in the config file");
   }
 
   return { authToken };
