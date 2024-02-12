@@ -1,6 +1,6 @@
 {
   "name": "ngenv",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "description": "Writes ngrok tunnel url to .env file",
   "main": "ngenv",
   "license": "MIT",
