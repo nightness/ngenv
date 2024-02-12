@@ -131,7 +131,7 @@ const errLogFile = `${projectFolder}/.ngenv/err.log`;
 /******************************************* Startup *******************************************/
 
 // Show the root help
-if (actionVerb === "--help" || actionVerb === "-h") {
+if (!actionVerb || actionVerb === "--help" || actionVerb === "-h") {
   rootHelp();
   process.exit(0);
 }
@@ -182,7 +182,8 @@ switch (actionVerb) {
     break;
   }
   default:
-    rootHelp();
+    console.log(`Unknown command: ${actionVerb}`);
+    console.log(`Run '${scriptName} --help' for usage.`);
     process.exit(1);
 }
 
