@@ -6,6 +6,54 @@ const { spawn, exec } = require("child_process");
 const commandLineArgs = require("command-line-args");
 const ngrok = require("ngrok");
 
+/************************************************** Global **************************************************/
+
+// Get the command line options
+const scriptName = path.basename(process.argv[1]);
+const actionVerb = process.argv[2];
+const options =
+  (actionVerb && actionVerb !== "--help") || !actionVerb === "-h"
+    ? getOptions()
+    : {};
+function getOptions() {
+  const optionDefinitions = [
+    { name: "proto", alias: "P", type: String },
+    { name: "port", alias: "p", type: Number },
+    { name: "env", alias: "e", type: String },
+    { name: "verbose", alias: "v", type: Boolean, defaultValue: false },
+    { name: "help", alias: "h", type: Boolean },
+  ];
+
+  try {
+    // Parse options, skipping the first three arguments ('node', script name and verb)
+    const options = commandLineArgs(optionDefinitions, {
+      argv: process.argv.slice(3),
+    });
+
+    return options;
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+}
+if (options.verbose) console.log("Options:", options);
+
+// Find the .env file
+const dotEnvFile = findDotEnv(options?.env ?? ".env");
+if (!dotEnvFile) {
+  console.error(
+    `The specified environment file was not found: ${options?.env ?? ".env"}`
+  );
+  process.exit(1);
+}
+if (options.verbose) console.log(`Using environment file: ${dotEnvFile}`);
+// Walk the path to find .env file...
+function findDotEnv(filename) {
+  const currentDir = findProjectFolder(filename);
+  return `${currentDir}/${filename}`;
+}
+
+// Check if the ngrok config file exists
 const ngrokConfigFile = getNgrokConfig();
 if (!ngrokConfigFile) {
   console.error(
@@ -13,14 +61,66 @@ if (!ngrokConfigFile) {
   );
   process.exit(1);
 }
+if (options.verbose) console.log(`Using ngrok config file: ${ngrokConfigFile}`);
+function getNgrokConfig(pathOnly = false) {
+  const paths = [
+    os.homedir() + "/.ngrok2", // Newer versions of ngrok
+    os.homedir() + "/Library/Application Support/ngrok", // MacOS
+    os.homedir() + "/AppData/Local/ngrok", // Windows
+    os.homedir() + "/.config/ngrok", // Alternative location for linux
+  ];
+  for (const p of paths) {
+    if (fs.existsSync(`${p}/ngrok.yml`)) {
+      return pathOnly ? p : `${p}/ngrok.yml`;
+    }
+  }
 
-const projectFolder = findProjectFolder();
+  if (pathOnly) return null;
+  throw new Error(
+    "Ngrok config file not found. Try running 'ngrok authtoken <token>' in your terminal."
+  );
+}
+
+// Read the ngrok config file
+const authToken = readNgrokConfig(ngrokConfigFile);
+if (!authToken) {
+  console.error(
+    "No ngrok authtoken found! Run 'ngrok authtoken <token>' in your terminal."
+  );
+  process.exit(1);
+}
+function readNgrokConfig() {
+  const data = fs.readFileSync(ngrokConfigFile, "utf8");
+
+  let authToken;
+
+  // Convert string to string array, split at newlines
+  let lines = data.split("\n"); // string[]
+
+  // find the auth token (format: authtoken: token_goes_here)
+  lines.forEach((element) => {
+    const [name, value] = element.split(": ");
+    if (name === "authtoken") authToken = value;
+  });
+
+  // No token found
+  if (!authToken) {
+    // https://dashboard.ngrok.com/get-started/your-authtoken
+    return null;
+  }
+
+  return authToken;
+}
+
+// Setup the ngenv folder
+const projectFolder = findProjectFolder(options?.env ?? ".env");
 if (!projectFolder) {
   console.error(
     "No project folder found! Make sure there is a .env file in the project folder."
   );
   process.exit(1);
 }
+if (options.verbose) console.log(`Using project folder: ${projectFolder}`);
 if (!fs.existsSync(`${projectFolder}/.ngenv`)) {
   fs.mkdirSync(`${projectFolder}/.ngenv`);
 }
@@ -28,7 +128,160 @@ const lockFile = `${projectFolder}/.ngenv/running.lock`;
 const outLogFile = `${projectFolder}/.ngenv/out.log`;
 const errLogFile = `${projectFolder}/.ngenv/err.log`;
 
-let authToken = null; // string || null
+/******************************************* Startup *******************************************/
+
+// Show the root help
+if (actionVerb === "--help" || actionVerb === "-h") {
+  rootHelp();
+  process.exit(0);
+}
+
+// Show the command specific help
+if (options.help) {
+  commandHelp(actionVerb);
+  process.exit(0);
+}
+
+// Process command line arguments
+switch (actionVerb) {
+  case "start":
+    // Spawn the background process
+    startBackgroundProcess();
+    break;
+  case "stop":
+    // Stop the background process
+    stopBackgroundProcess();
+    break;
+  case "clear":
+    // Clear the log files
+    clearLogs();
+    break;
+  case "logs":
+    // Display the log files
+    displayLogs();
+    break;
+  case "run":
+  case "background": {
+    // Set up the background process
+    if (actionVerb === "background") {
+      // Start-up for the background process
+      process.on("SIGTERM", () => {
+        console.log("Stopping background process...");
+        removeLockFile();
+        process.exit(0);
+      });
+      process.on("exit", (code) => {
+        console.log(`About to exit with code: ${code}`);
+        // Perform cleanup or final operations here
+        removeLockFile();
+      });
+    }
+
+    // Start the main process
+    main();
+    break;
+  }
+  default:
+    rootHelp();
+    process.exit(1);
+}
+
+// Process command line arguments
+if (actionVerb === "start") {
+} else if (actionVerb === "stop") {
+  // Stop the background process
+  stopBackgroundProcess();
+} else if (actionVerb === "clear") {
+  // Clear the log files
+  clearLogs();
+} else if (actionVerb === "logs") {
+  // Display the log files
+  displayLogs();
+  // tailLogs();
+} else if (actionVerb === "run" || actionVerb === "background") {
+  // Set up the background process
+  if (actionVerb === "background") {
+    // Start-up for the background process
+    process.on("SIGTERM", () => {
+      console.log("Stopping background process...");
+      removeLockFile();
+      process.exit(0);
+    });
+    process.on("exit", (code) => {
+      console.log(`About to exit with code: ${code}`);
+      // Perform cleanup or final operations here
+      removeLockFile();
+    });
+  }
+
+  // Start the main process
+  main();
+} else {
+  rootHelp();
+}
+
+function rootHelp() {
+  console.log(`Usage: ${scriptName} [run|start|stop|logs|clear] [options]`);
+  console.log(`\nCommands:`);
+  console.log(`  run\t\t\tRun the tunnel in the foreground.`);
+  console.log(`  start\t\t\tStart the tunnel in the background.`);
+  console.log(`  stop\t\t\tStop the background process if it's running.`);
+  console.log(`  logs\t\t\tDisplay the output and error logs.`);
+  console.log(`  clear\t\t\tClear the content of the output and error logs.`);
+  console.log(`\nOptions:`);
+  console.log(`  -h, --help\t\tDisplay this help message.`);
+  console.log(`\nExample:`);
+  console.log(`  ${scriptName} start\t\t# Starts the background process`);
+}
+
+function commandHelp(command) {
+  console.log(`Usage: ${scriptName} ${command} [options]`);
+  console.log(`\nOptions:`);
+  if (command === "start" || command === "run") {
+    console.log(
+      `  -P, --proto\t\tProtocol to use (http|tcp|tls). Default is http.`
+    );
+    console.log(`  -p, --port\t\tPort to use. Default is 3000.`);
+    console.log(`  -e, --env\t\tEnvironment file to use. Default is .env.`);
+    console.log(`  -v, --verbose\t\tShow verbose output.`);
+  }
+  console.log(`  -h, --help\t\tDisplay this help message.`);
+}
+
+/******************************************* Main *******************************************/
+
+async function main() {
+  // Get the ngrok config file path
+  let ngrokConfig = getNgrokConfig();
+
+  // Check if the ngrok config file exists
+  if (!fs.existsSync(ngrokConfig)) {
+    throw new Error("No ngrok config file found");
+  }
+
+  // Start ngrok
+  const proto = options?.proto ?? "http";
+  const addr = options?.port ? options.port : 3000;
+  try {
+    const url = await ngrok.connect({
+      authtoken: authToken,
+      proto,
+      addr,
+      onLogEvent: (data) => {
+        // console.log(data);
+      },
+    });
+    writeDotEnv(url); // Sync the .env file
+    console.log(`Started ngrok: protocol '${proto}', addr '${addr}'`);
+    console.log(`Your current ngrok url is ${url}.`);
+    console.log(`Your .env file has been updated.`);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+}
+
+/******************************************* Functions *******************************************/
 
 function isAlreadyRunning() {
   return fs.existsSync(lockFile);
@@ -131,151 +384,6 @@ function clearLogs() {
   console.log("Log files cleared.");
 }
 
-function getOptions() {
-  const optionDefinitions = [
-    { name: "proto", alias: "P", type: String },
-    { name: "port", alias: "p", type: Number },
-    { name: "env", alias: "e", type: String },
-  ];
-
-  // Parse options, skipping the first three arguments ('node', script name and verb)
-  const options = commandLineArgs(optionDefinitions, {
-    argv: process.argv.slice(3),
-  });
-
-  return options;
-}
-
-// Process command line arguments
-if (process.argv[2] === "start") {
-  // The result is only used in the background process, but the check is also done here, before the
-  // background process is started to prevent bad arguments from being passed to the background process.
-  getOptions();
-  // Spawn the background process
-  startBackgroundProcess();
-} else if (process.argv[2] === "stop") {
-  // Stop the background process
-  stopBackgroundProcess();
-} else if (process.argv[2] === "clear") {
-  // Clear the log files
-  clearLogs();
-} else if (process.argv[2] === "logs") {
-  // Display the log files
-  displayLogs();
-  // tailLogs();
-} else if (process.argv[2] === "run" || process.argv[2] === "background") {
-  if (process.argv[2] === "background") {
-    // Start-up for the background process
-    process.on("SIGTERM", () => {
-      console.log("Stopping background process...");
-      removeLockFile();
-      process.exit(0);
-    });
-    process.on("exit", (code) => {
-      console.log(`About to exit with code: ${code}`);
-      // Perform cleanup or final operations here
-      removeLockFile();
-    });
-  }
-
-  const options = getOptions();
-  backgroundMain(options);
-} else {
-  const scriptName = path.basename(process.argv[1]);
-  console.log(`Usage: node ${scriptName} [run|start|stop|logs|clear]`);
-  console.log(`\nCommands:`);
-  console.log(
-    `  start\t\tStart the background process if it's not already running.`
-  );
-  console.log(`  stop\t\tStop the background process if it's running.`);
-  console.log(`  logs\t\tDisplay the output and error logs.`);
-  console.log(`  clear\t\tClear the content of the output and error logs.`);
-  console.log(`\nExample:`);
-  console.log(`  node ${scriptName} start\t\t# Starts the background process`);
-}
-
-async function backgroundMain(options) {
-  // Get the ngrok config file path
-  let ngrokConfig = getNgrokConfig();
-
-  // Check if the ngrok config file exists
-  if (!fs.existsSync(ngrokConfig)) {
-    throw new Error("No ngrok config file found");
-  }
-
-  // Read the ngrok config file
-  try {
-    const { authToken } = readNgrokConfig(ngrokConfig);
-    global.authToken = authToken;
-  } catch (err) {
-    console.error(err);
-    process.exit(1);
-  }
-
-  // Start ngrok
-  const proto = options?.proto ?? "http";
-  const addr = options?.port ? options.port : 3000;
-  try {
-    const url = await ngrok.connect({
-      authtoken: authToken,
-      proto,
-      addr,
-      onLogEvent: (data) => {
-        // console.log(data);
-      },
-    });
-    writeDotEnv(url); // Sync the .env file
-    console.log(`Started ngrok: protocol '${proto}', addr '${addr}'`);
-    console.log(`Your current ngrok url is ${url}.`);
-    console.log(`Your .env file has been updated.`);
-  } catch (err) {
-    console.error(err.message);
-    process.exit(1);
-  }
-}
-
-function getNgrokConfig(pathOnly = false) {
-  const paths = [
-    os.homedir() + "/.ngrok2", // Newer versions of ngrok
-    os.homedir() + "/Library/Application Support/ngrok", // MacOS
-    os.homedir() + "/AppData/Local/ngrok", // Windows
-    os.homedir() + "/.config/ngrok", // Alternative location for linux
-  ];
-  for (const p of paths) {
-    if (fs.existsSync(`${p}/ngrok.yml`)) {
-      return pathOnly ? p : `${p}/ngrok.yml`;
-    }
-  }
-
-  if (pathOnly) return null;
-  throw new Error(
-    "Ngrok config file not found. Try running 'ngrok authtoken <token>' in your terminal."
-  );
-}
-
-function readNgrokConfig(ngrokConfig) {
-  const data = fs.readFileSync(ngrokConfig, "utf8");
-
-  let authToken;
-
-  // Convert string to string array, split at newlines
-  let lines = data.split("\n"); // string[]
-
-  // find the auth token (format: authtoken: token_goes_here)
-  lines.forEach((element) => {
-    const [name, value] = element.split(": ");
-    if (name === "authtoken") authToken = value;
-  });
-
-  // No token found
-  if (!authToken) {
-    // https://dashboard.ngrok.com/get-started/your-authtoken
-    throw new Error("No ngrok authtoken found in the config file");
-  }
-
-  return { authToken };
-}
-
 function findProjectFolder(filename = ".env") {
   // Walk the path to find .env file... options?.env
   let currentDir = __dirname;
@@ -297,12 +405,6 @@ function findProjectFolder(filename = ".env") {
   return currentDir;
 }
 
-// Walk the path to find .env file...
-function findDotEnv(filename = ".env") {
-  const currentDir = findProjectFolder(filename);
-  return `${currentDir}/${filename}`;
-}
-
 function readDotEnv(path) {
   const data = fs.readFileSync(path, "utf8");
 
@@ -314,7 +416,7 @@ function readDotEnv(path) {
 
 function writeDotEnv(url) {
   // Read the .env file
-  let lines = readDotEnv(findDotEnv());
+  let lines = readDotEnv(dotEnvFile);
 
   // Rebuild lines with the new url
   let found = false;
@@ -340,5 +442,5 @@ function writeDotEnv(url) {
   writeData = writeData.slice(0, writeData.length - 1);
 
   // Write the new .env file
-  fs.writeFileSync(findDotEnv(), writeData);
+  fs.writeFileSync(dotEnvFile, writeData);
 }
