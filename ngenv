@@ -1,24 +1,190 @@
 #!/usr/bin/env node
-const ngrok = require("ngrok");
 const fs = require("fs");
 const os = require("os");
-const { parse } = require("yaml");
-
-// Parse the command line options
+const path = require("path");
+const { spawn, exec } = require("child_process");
 const commandLineArgs = require("command-line-args");
-const optionDefinitions = [
-  { name: "proto", alias: "P", type: String },
-  { name: "port", alias: "p", type: Number },
-  { name: "env", alias: "e", type: String },
-];
-const options = commandLineArgs(optionDefinitions);
-const dotenvFile = options?.env ?? "./.env";
+const ngrok = require("ngrok");
 
-// vars
+const projectFolder = findProjectFolder();
+if (!projectFolder) {
+  console.error("No project folder found");
+  process.exit(1);
+}
+if (!fs.existsSync(`${projectFolder}/.ngenv`)) {
+  fs.mkdirSync(`${projectFolder}/.ngenv`);
+}
+const lockFile = `${projectFolder}/.ngenv/running.lock`;
+const outLogFile = `${projectFolder}/.ngenv/out.log`;
+const errLogFile = `${projectFolder}/.ngenv/err.log`;
+
 let authToken = null; // string || null
 
-// Main (an async) function
-(async function () {
+function isAlreadyRunning() {
+  return fs.existsSync(lockFile);
+}
+
+function createLockFile(pid) {
+  fs.writeFileSync(lockFile, pid.toString());
+}
+
+function removeLockFile() {
+  if (isAlreadyRunning()) {
+    fs.unlinkSync(lockFile);
+  }
+}
+
+function removeLogFiles() {
+  if (fs.existsSync(outLogFile)) {
+    fs.unlinkSync(outLogFile);
+  }
+  if (fs.existsSync(errLogFile)) {
+    fs.unlinkSync(errLogFile);
+  }
+}
+
+function startBackgroundProcess() {
+  if (isAlreadyRunning()) {
+    console.log("An instance is already running.");
+    process.exit(1);
+  }
+
+  // Remove old log files
+  removeLogFiles();
+
+  const out = fs.openSync(outLogFile, "a");
+  const err = fs.openSync(errLogFile, "a");
+
+  const subprocess = spawn(
+    process.argv[0],
+    [process.argv[1], "background", ...process.argv.slice(3)],
+    {
+      detached: true,
+      stdio: ["ignore", out, err],
+    }
+  );
+
+  createLockFile(subprocess.pid);
+  console.log(`Started background process with PID: ${subprocess.pid}`);
+
+  subprocess.unref();
+}
+
+function stopBackgroundProcess() {
+  if (!isAlreadyRunning()) {
+    console.log("No running instance found.");
+    return;
+  }
+
+  const pid = fs.readFileSync(lockFile, "utf-8");
+
+  exec(`ps -p ${pid}`, (error, stdout, stderr) => {
+    if (error || stderr) {
+      console.log(`No process with PID ${pid} is running.`);
+      removeLockFile();
+      return;
+    }
+
+    // If the process exists, attempt to kill it
+    try {
+      process.kill(pid, "SIGTERM");
+      removeLockFile();
+      console.log(`Stopped process with PID: ${pid}`);
+    } catch (err) {
+      console.error(
+        `Failed to stop process with PID: ${pid}. Error: ${err.message}`
+      );
+    }
+  });
+}
+
+function readLog(path) {
+  try {
+    return fs.readFileSync(path, "utf-8");
+  } catch (err) {
+    return "";
+  }
+}
+
+function displayLogs() {
+  const outLog = readLog(outLogFile);
+  const errLog = readLog(errLogFile);
+
+  console.log("STDOUT:\n", outLog.trimStart());
+  console.log("STDERR:\n", errLog.trimStart());
+}
+
+function clearLogs() {
+  fs.rmSync(outLogFile, { force: true });
+  fs.rmSync(errLogFile, { force: true });
+
+  console.log("Log files cleared.");
+}
+
+function getOptions() {
+  const optionDefinitions = [
+    { name: "proto", alias: "P", type: String },
+    { name: "port", alias: "p", type: Number },
+    { name: "env", alias: "e", type: String },
+  ];
+
+  // Parse options, skipping the first three arguments ('node', script name and verb)
+  const options = commandLineArgs(optionDefinitions, {
+    argv: process.argv.slice(3),
+  });
+
+  return options;
+}
+
+// Process command line arguments
+if (process.argv[2] === "start") {
+  // The result is only used in the background process, but the check is also done here, before the
+  // background process is started to prevent bad arguments from being passed to the background process.
+  getOptions();
+  // Spawn the background process
+  startBackgroundProcess();
+} else if (process.argv[2] === "stop") {
+  // Stop the background process
+  stopBackgroundProcess();
+} else if (process.argv[2] === "clear") {
+  // Clear the log files
+  clearLogs();
+} else if (process.argv[2] === "logs") {
+  // Display the log files
+  displayLogs();
+  // tailLogs();
+} else if (process.argv[2] === "run" || process.argv[2] === "background") {
+  if (process.argv[2] === "background") {
+    // Start-up for the background process
+    process.on("SIGTERM", () => {
+      console.log("Stopping background process...");
+      removeLockFile();
+      process.exit(0);
+    });
+    process.on("exit", (code) => {
+      console.log(`About to exit with code: ${code}`);
+      // Perform cleanup or final operations here
+      removeLockFile();
+    });
+  }
+
+  const options = getOptions();
+  backgroundMain(options);
+} else {
+  const scriptName = path.basename(process.argv[1]);
+  console.log(`Usage: node ${scriptName} [run|start|stop|logs|clear]`);
+  console.log(`\nCommands:`);
+  console.log(
+    `  start\t\tStart the background process if it's not already running.`
+  );
+  console.log(`  stop\t\tStop the background process if it's running.`);
+  console.log(`  logs\t\tDisplay the output and error logs.`);
+  console.log(`  clear\t\tClear the content of the output and error logs.`);
+  console.log(`\nExample:`);
+  console.log(`  node ${scriptName} start\t\t# Starts the background process`);
+}
+
+async function backgroundMain(options) {
   // Get the ngrok config file path
   let ngrokConfig = getNgrokConfig();
 
@@ -45,10 +211,7 @@ let authToken = null; // string || null
       proto,
       addr,
       onLogEvent: (data) => {
-        // combine the key-value pairs into a single object
-        const dataObj = parseLogLine(data);
-        // console.log(`[${dataObj.lvl}] ${dataObj.msg}`);
-        // console.log(dataObj);
+        // console.log(data);
       },
     });
     writeDotEnv(url); // Sync the .env file
@@ -59,7 +222,7 @@ let authToken = null; // string || null
     console.error(err.message);
     process.exit(1);
   }
-})(); // end main async function
+}
 
 function getNgrokConfig() {
   // Newer versions of ngrok
@@ -112,8 +275,35 @@ function readNgrokConfig(ngrokConfig) {
   return { authToken };
 }
 
-function readDotEnv() {
-  const data = fs.readFileSync(dotenvFile, "utf8");
+function findProjectFolder(filename = ".env") {
+  // Walk the path to find .env file... options?.env
+  let currentDir = __dirname;
+  while (true) {
+    const packageJsonPath = path.join(currentDir, "package.json");
+    if (fs.existsSync(packageJsonPath)) {
+      break;
+    }
+    const envPath = path.join(currentDir, filename);
+    if (fs.existsSync(envPath)) {
+      break;
+    }
+    const parentDir = path.resolve(currentDir, "..");
+    if (parentDir === currentDir) {
+      throw new Error("No project folder found");
+    }
+    currentDir = parentDir;
+  }
+  return currentDir;
+}
+
+// Walk the path to find .env file...
+function findDotEnv(filename = ".env") {
+  const currentDir = findProjectFolder(filename);
+  return `${currentDir}/${filename}`;
+}
+
+function readDotEnv(path) {
+  const data = fs.readFileSync(path, "utf8");
 
   // Convert string to string array, split at newlines
   let lines = data.split("\n"); // string[]
@@ -123,7 +313,7 @@ function readDotEnv() {
 
 function writeDotEnv(url) {
   // Read the .env file
-  let lines = readDotEnv(dotenvFile);
+  let lines = readDotEnv(findDotEnv());
 
   // Rebuild lines with the new url
   let found = false;
@@ -149,16 +339,5 @@ function writeDotEnv(url) {
   writeData = writeData.slice(0, writeData.length - 1);
 
   // Write the new .env file
-  fs.writeFileSync(dotenvFile, writeData);
-}
-
-function parseLogLine(line) {
-  const regex = /(\S+)=("[^"]+"|\S+)/g;
-  const logEntry = {};
-  let match;
-  while ((match = regex.exec(line)) !== null) {
-    logEntry[match[1]] = match[2].replace(/"/g, "");
-  }
-  logEntry.t = new Date(logEntry.t);
-  return logEntry;
+  fs.writeFileSync(findDotEnv(), writeData);
 }
