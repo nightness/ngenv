@@ -7,16 +7,8 @@
   "bin": {
     "ngenv": "./ngenv"
   },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "debug": "node --inspect ngenv",
-    "start": "node ngenv"
-  },
   "dependencies": {
     "command-line-args": "^5.2.0",
-    "ngrok": "^4.2.2"
-  },
-  "peerDependencies": {
-    "yaml": "*"
+    "ngrok": "^5.0.0-beta.2"
   }
 }
