@@ -1,9 +1,13 @@
 {
   "name": "ngenv",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Writes ngrok tunnel url to .env file",
   "main": "ngenv",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://git.brainwires.net/josh.guyette/ngenv"
+  },
   "bin": {
     "ngenv": "./ngenv"
   },
