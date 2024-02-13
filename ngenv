@@ -39,7 +39,7 @@ function getOptions() {
 if (options.verbose) console.log("Options:", options);
 
 // Find the .env file
-const dotEnvFile = findDotEnv(options?.env ?? ".env");
+const dotEnvFile = options?.env ?? findDotEnv(".env");
 if (!dotEnvFile) {
   console.error(
     `The specified environment file was not found: ${options?.env ?? ".env"}`
@@ -113,20 +113,20 @@ function readNgrokConfig() {
 }
 
 // Setup the ngenv folder
-const projectFolder = findProjectFolder(options?.env ?? ".env");
-if (!projectFolder) {
+const tmpFolder = os.tmpdir();
+if (!tmpFolder) {
   console.error(
     "No project folder found! Make sure there is a .env file in the project folder."
   );
   process.exit(1);
 }
-if (options.verbose) console.log(`Using project folder: ${projectFolder}`);
-if (!fs.existsSync(`${projectFolder}/.ngenv`)) {
-  fs.mkdirSync(`${projectFolder}/.ngenv`);
+if (options.verbose) console.log(`Using project folder: ${tmpFolder}`);
+if (!fs.existsSync(`${tmpFolder}/.ngenv`)) {
+  fs.mkdirSync(`${tmpFolder}/.ngenv`);
 }
-const lockFile = `${projectFolder}/.ngenv/running.lock`;
-const outLogFile = `${projectFolder}/.ngenv/out.log`;
-const errLogFile = `${projectFolder}/.ngenv/err.log`;
+const lockFile = `${tmpFolder}/.ngenv/running.lock`;
+const outLogFile = `${tmpFolder}/.ngenv/out.log`;
+const errLogFile = `${tmpFolder}/.ngenv/err.log`;
 
 /******************************************* Startup *******************************************/
 
