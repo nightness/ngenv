@@ -187,40 +187,6 @@ switch (actionVerb) {
     process.exit(1);
 }
 
-// Process command line arguments
-if (actionVerb === "start") {
-} else if (actionVerb === "stop") {
-  // Stop the background process
-  stopBackgroundProcess();
-} else if (actionVerb === "clear") {
-  // Clear the log files
-  clearLogs();
-} else if (actionVerb === "logs") {
-  // Display the log files
-  displayLogs();
-  // tailLogs();
-} else if (actionVerb === "run" || actionVerb === "background") {
-  // Set up the background process
-  if (actionVerb === "background") {
-    // Start-up for the background process
-    process.on("SIGTERM", () => {
-      console.log("Stopping background process...");
-      removeLockFile();
-      process.exit(0);
-    });
-    process.on("exit", (code) => {
-      console.log(`About to exit with code: ${code}`);
-      // Perform cleanup or final operations here
-      removeLockFile();
-    });
-  }
-
-  // Start the main process
-  main();
-} else {
-  rootHelp();
-}
-
 function rootHelp() {
   console.log(`Usage: ${scriptName} [run|start|stop|logs|clear] [options]`);
   console.log(`\nCommands:`);
