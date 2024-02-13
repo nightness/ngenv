@@ -353,7 +353,7 @@ function clearLogs() {
 
 function findProjectFolder(filename = ".env") {
   // Walk the path to find .env file... options?.env
-  let currentDir = __dirname;
+  let currentDir = process.cwd();
   while (true) {
     const packageJsonPath = path.join(currentDir, "package.json");
     if (fs.existsSync(packageJsonPath)) {
