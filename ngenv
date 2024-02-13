@@ -17,9 +17,16 @@ const options =
     : {};
 function getOptions() {
   const optionDefinitions = [
+    { name: "config", alias: "C", type: String },
+    { name: "auth", alias: "a", type: String },
+    { name: "authtoken", alias: "t", type: String },
     { name: "proto", alias: "P", type: String },
     { name: "port", alias: "p", type: Number },
     { name: "env", alias: "e", type: String },
+    // { name: "hostname", alias: "H", type: String },
+    { name: "subdomain", alias: "s", type: String },
+    // { name: "config", alias: "c", type: String, multiple: true },
+    { name: "region", alias: "r", type: String, defaultValue: "us" },
     { name: "verbose", alias: "v", type: Boolean, defaultValue: false },
     { name: "help", alias: "h", type: Boolean },
   ];
@@ -54,7 +61,7 @@ function findDotEnv(filename) {
 }
 
 // Check if the ngrok config file exists
-const ngrokConfigFile = getNgrokConfig();
+const ngrokConfigFile = options?.config ?? getNgrokConfig();
 if (!ngrokConfigFile) {
   console.error(
     "No ngrok config file found! Run 'ngrok authtoken <token>' in your terminal."
@@ -82,7 +89,7 @@ function getNgrokConfig(pathOnly = false) {
 }
 
 // Read the ngrok config file
-const authToken = readNgrokConfig(ngrokConfigFile);
+const authToken = options?.authtoken ?? readNgrokConfig(ngrokConfigFile);
 if (!authToken) {
   console.error(
     "No ngrok authtoken found! Run 'ngrok authtoken <token>' in your terminal."
@@ -209,7 +216,14 @@ function commandHelp(command) {
       `  -P, --proto\t\tProtocol to use (http|tcp|tls). Default is http.`
     );
     console.log(`  -p, --port\t\tPort to use. Default is 3000.`);
+    console.log(`  -s, --subdomain\tSubdomain to use; [xyz].ngrok.io`);
+    console.log(`  -r, --region\t\tRegion to use. Default is 'us'.`);
+    console.log(`  -a, --auth\t\tHTTP Basic authentication for tunnel.`);
+    console.log(
+      `  -t, --authtoken\tYour authtoken from ngrok.com. Uses config file if not provided.`
+    );
     console.log(`  -e, --env\t\tEnvironment file to use. Default is .env.`);
+    console.log(`  -C, --config\t\tCustom path to ngrok config file.`);
     console.log(`  -v, --verbose\t\tShow verbose output.`);
   }
   console.log(`  -h, --help\t\tDisplay this help message.`);
@@ -219,7 +233,7 @@ function commandHelp(command) {
 
 async function main() {
   // Get the ngrok config file path
-  let ngrokConfig = getNgrokConfig();
+  const ngrokConfig = options.config ?? getNgrokConfig();
 
   // Check if the ngrok config file exists
   if (!fs.existsSync(ngrokConfig)) {
@@ -234,6 +248,10 @@ async function main() {
       authtoken: authToken,
       proto,
       addr,
+      region: options?.region,
+      auth: options?.auth,
+      subdomain: options?.subdomain,
+      configPath: ngrokConfig,
       onLogEvent: (data) => {
         // console.log(data);
       },
