@@ -80,6 +80,10 @@ ngenv clear
 
 - `-P, --proto <protocol>`: Specify the protocol (default: http).
 - `-p, --port <port>`: Set the port for ngrok to forward (default: 3000).
+- `-s, --subdomain <subdomain>`: Define a custom subdomain for the ngrok URL.
+- `-r, --region <region>`: Set the region for the ngrok server (default: us).
+- `-a, --auth <user:pass>`: Set basic authentication for the ngrok tunnel.
+- `-t, --authtoken <token>`: Set the authtoken for ngrok (overrides the default).
 - `-e, --env <path>`: Define a custom path to your `.env` file.
 
 ## Examples

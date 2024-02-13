@@ -6,7 +6,7 @@ const { spawn, exec } = require("child_process");
 const commandLineArgs = require("command-line-args");
 const ngrok = require("ngrok");
 
-/************************************************** Global **************************************************/
+/********************************************* Global Init *********************************************/
 
 // Get the command line options
 const scriptName = path.basename(process.argv[1]);
@@ -26,6 +26,7 @@ function getOptions() {
     // { name: "hostname", alias: "H", type: String },
     { name: "subdomain", alias: "s", type: String },
     // { name: "config", alias: "c", type: String, multiple: true },
+    // { name: "name", alias: "n", type: String }, // Tunnel name, not used yet
     { name: "region", alias: "r", type: String, defaultValue: "us" },
     { name: "verbose", alias: "v", type: Boolean, defaultValue: false },
     { name: "help", alias: "h", type: Boolean },
@@ -193,6 +194,8 @@ switch (actionVerb) {
     console.log(`Run '${scriptName} --help' for usage.`);
     process.exit(1);
 }
+
+/******************************************* Help *******************************************/
 
 function rootHelp() {
   console.log(`Usage: ${scriptName} [run|start|stop|logs|clear] [options]`);
